@@ -1,9 +1,11 @@
 #include "BlueMotor.h"
 #include <RBE1001Lib.h>
 
+//portMUX_TYPE mux; 
+
 long count = 0;  // encoder counter
 // Mutex for the count critical variable
-portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 /**
  * Interrupt service routine (ISR) for one of the encoder
@@ -27,7 +29,7 @@ void BlueMotor::setup() {
   pinMode(AIN2, OUTPUT);
   digitalWrite(AIN1, LOW);
   digitalWrite(AIN2, HIGH);
-  pinMode(PWM, OUTPUT);
+  pinMode(ENCA, INPUT);
   attachInterrupt(ENCA, isr, CHANGE);
 }
 

@@ -1,4 +1,5 @@
 #pragma once
+#include <RBE1001Lib.h>
 
 class BlueMotor {
  public:
@@ -6,7 +7,7 @@ class BlueMotor {
   long getPosition();
   void reset();
   void setup();
-  //    static portMUX_TYPE mux;
+  //static portMUX_TYPE mux;
   void setEffort(int effort, bool clockwise);
   
   private:
