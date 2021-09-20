@@ -1,7 +1,7 @@
 #include "BlueMotor.h"
 #include <RBE1001Lib.h>
 
-//portMUX_TYPE mux; 
+
 
 long count = 0;  // encoder counter
 // Mutex for the count critical variable
@@ -29,7 +29,7 @@ void BlueMotor::setup() {
   pinMode(AIN2, OUTPUT);
   digitalWrite(AIN1, LOW);
   digitalWrite(AIN2, HIGH);
-  pinMode(ENCA, INPUT);
+  pinMode(PWM, OUTPUT);
   attachInterrupt(ENCA, isr, CHANGE);
 }
 
