@@ -5,11 +5,6 @@
 BlueMotor blueMotor;
 Button bootButton(BOOT_FLAG_PIN);
 
-
-// constexpr int PWMA = 5;
-// constexpr int AIN1 = 27;
-// constexpr int AIN2 = 23;
-
 long timeToPrint = millis();
 long now = 0;
 long newPosition = 0;
