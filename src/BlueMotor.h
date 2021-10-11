@@ -9,6 +9,8 @@ class BlueMotor {
   void setup();
   //static portMUX_TYPE mux;
   void setEffort(int effort, bool clockwise);
+  void setEffortWithoutDB(int effort, bool clockwise);
+  float setEffortWithoutDB(int effort);
   
   private:
   const int PWM = 5;
