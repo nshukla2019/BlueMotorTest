@@ -3,8 +3,11 @@
 #include "Timer.h"
 #include "IRdecoder.h"
 #include "RemoteConstants.h"
+#include "ESP32AnalogRead.h"
 
 BlueMotor blueMotor;
+ESP32AnalogRead leftLine;
+ESP32AnalogRead rightLine;
 
 // things needed to print
 long timeToPrint = 0;
@@ -35,12 +38,8 @@ float Fourty5DegreeEncoderCount = 3500.0;
 float Twenty5DegreeEncoderCount = 7700.0;
 float stagingBlock = 0.0;
 
-//for sensors
-const int reflectancePin1 = 39;
-const int reflectancePin2 = 36;
-
 Rangefinder ultrasonic;
-
+const float ultraKp = 0.0085;
 // roof and block thresholds
 int roofApproachThreshold = 20; // how far we want to be from roof to lift arm safely
 int roofThreshold = 17;         // how far we want to be from roof to actually pick up/drop off plate
@@ -57,12 +56,19 @@ double track = 5.875;
 int defaultSpeed = 150;
 double distanceCorrection = 0.95;
 
+const float pivot_diam = 14.2;
+const float wheel_diam = 6.8;
+const float degreesPerMotor = (pivot_diam * 3.14) / (wheel_diam * 3.14);
+const float degreesPerCM = 360.0 / (3.14 * wheel_diam); // cm to degrees formula
+
 //for line following (calling the linefollowing sensor functions)
-int reflectance1;
-int reflectance2;
-int threshold = 1250;
+const int reflectancePin1 = 39;
+const int reflectancePin2 = 36;
+int threshold = 0.2;
 int thresholdHigh = 1250;
 double kp = 0.05;
+float leftV;
+float rightV;
 
 //for servo arm
 Servo grip;
@@ -103,9 +109,9 @@ int robotState;
 
 //functions (need to check each of these once sensors are wired)
 void lineFollow(int reflectance1, int reflectance2);
-void turn(double angle, double diam3, double track2);
+void turn(double angle);
 double ultrasonicRead();
-void straight(double distance, double wheelDiameter);
+void straight(double distance);
 
 void pickUpOld();
 void pickUpNew();
@@ -114,14 +120,13 @@ void depositNew();
 
 void setup()
 {
-  Serial.begin(115200);
+
   ultrasonic.attach(SIDE_ULTRASONIC_TRIG, SIDE_ULTRASONIC_ECHO);
 
-  grip.attach(servoPin);
-  // printf("Attached %d", grip.attached());
+  leftLine.attach(reflectancePin2);
+  rightLine.attach(reflectancePin1);
 
-  pinMode(reflectancePin1, INPUT);
-  pinMode(reflectancePin2, INPUT);
+  grip.attach(servoPin);
 
   blueMotor.setup();
   blueMotor.reset();
@@ -129,6 +134,8 @@ void setup()
   decoder.init();
 
   robotState = LINE_FOLLOW_OUT;
+  Serial.begin(9600);
+  delay(1000);
 }
 
 /*
@@ -227,32 +234,44 @@ used to see encoder count as blueMotor spins with positive effort
 //   }
 // }
 
-//line follower which uses the values from the two reflectance pins as arguments void lineFollow(int reflectance_1, int reflectance_2)
-void lineFollow(int reflectance_1, int reflectance_2)
+//line follower which uses the values from the two reflectance pins as arguments
+void followLine(float reflectance1, float reflectance2)
 {
-  float error = reflectance_1 - reflectance_2;
+  reflectance1 = leftLine.readVoltage();
+  reflectance2 = rightLine.readVoltage();
+
+  float error = reflectance1 - reflectance2;
   float effort = 0;
   effort = kp * error;
   right_motor.setSpeed(defaultSpeed + effort);
   left_motor.setSpeed(defaultSpeed - effort);
+
+  Serial.printf("linetracker: left: %f, right %f\n", reflectance1, reflectance2);
+  delay(300);
 }
 
-// turn function which has turn angle, diameter, and track as the arguments
-void turn(double angle, double diam3, double track2)
+// turn function which has turn angle as the argument
+// positive degrees is left
+// negative degrees is right
+void turn(double degrees)
 {
-  double degreeMove = (angle * track2) / diam3;
-  left_motor.startMoveFor(degreeMove, 120);
-  right_motor.moveFor(-degreeMove, 120);
-  left_motor.setSpeed(0);
-  right_motor.setSpeed(0);
+  left_motor.startMoveFor(-(degrees * degreesPerMotor), 180);
+  right_motor.moveFor(degrees * degreesPerMotor, 180);
+  delay(1000);
 }
 
 // straight function which intakes the distance and the wheel diameter as arguments
-void straight(double distance, double wheelDiameter)
+// void straight(double distance, double wheelDiameter)
+// {
+//   double spin = (360 * distance) / (wheelDiameter * PI);
+//   left_motor.startMoveFor(spin, 150);
+//   right_motor.moveFor(spin, 150);
+// }
+
+void straight(double cm)
 {
-  double spin = (360 * distance) / (wheelDiameter * PI);
-  left_motor.startMoveFor(spin, 150);
-  right_motor.moveFor(spin, 150);
+  left_motor.startMoveFor(cm * degreesPerCM, 90);
+  right_motor.moveFor(cm * degreesPerCM, 90);
 }
 
 //read the ultrasonic
@@ -302,7 +321,7 @@ void pickUpOld()
   grip.write(100); // CHECK THIS
 
   // move a little closer to fully encapsulate plate with gripper open
-  straight(2, diam);
+  straight(2);
 
   // if button "1" is pressed on the remote
   if (keyPress == remote1)
@@ -319,7 +338,7 @@ void pickUpOld()
     setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);
 
     // back away from roof
-    straight(5, diam); // have this go backwards
+    straight(5); // have this go backwards
   }
   else
   {
@@ -330,7 +349,7 @@ void pickUpOld()
 // depositing old plate on block
 void depositOld()
 {
-  if (ultrasonicRead() == blockThreshold)
+  if (ultrasonicRead() > blockThreshold)
   { // check again to see if we are the position we want to be in
 
     // move arm down to staging block platform
@@ -350,7 +369,7 @@ void depositOld()
       delay(300);
 
       // back away from block enough to get back into original postion to be ready to pick up new plate
-      straight(5, diam); // have this go backwards
+      straight(5); // have this go backwards
 
       // close gripper
       grip.write(closeGrip); // CHECK THIS
@@ -391,7 +410,7 @@ void pickUpNew()
     if (safeToPickUpNew)
     {
       // move a little closer to fully grip plate with gripper open
-      straight(5, diam); // have to test to get distance forward
+      straight(5); // have to test to get distance forward
 
       // close gripper
       grip.write(closeGrip);
@@ -412,7 +431,7 @@ void depositNew()
 {
 
   // move a little closer to be in line with pins
-  straight(2, diam);
+  straight(2);
 
   // if button "5" is pressed on the remote
   if (keyPress == remote5)
@@ -433,7 +452,7 @@ void depositNew()
     setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);
 
     // back away from roof
-    straight(5, diam); // have this go backwards
+    straight(5); // have this go backwards
     grip.write(closeGrip);
   }
   else
@@ -456,7 +475,7 @@ void updateRobotState()
 
     if (ultrasonic.getDistanceCM() > roofApproachThreshold)
     {
-      lineFollow(reflectance1, reflectance2); // keep following line until we approach just before pick up distance
+      lineFollow(leftV, rightV); // keep following line until we approach just before pick up distance
     }
     else
     {
@@ -478,7 +497,7 @@ void updateRobotState()
 
     if (ultrasonicRead() > roofThreshold)
     {
-      lineFollow(reflectance1, reflectance2); //slowly follow line until closest position is reached (right in front of the plate)
+      lineFollow(leftV, rightV); //slowly follow line until closest position is reached (right in front of the plate)
     }
     else
     { //when it reaches the pickup distance
@@ -500,26 +519,26 @@ void updateRobotState()
   case PICKUP_OLD: //already at pickup distance with arm raised
     pickUpOld();
     delay(300);
-    turn(180, diam, track); // have to check if this works
+    turn(180);
     robotState = TOWARD_BLOCK;
     break;
 
   case TOWARD_BLOCK:
-    if ((reflectance1 > threshold) && (reflectance2 > threshold))
+    if ((leftV > threshold) && (rightV > threshold))
     { // reached intersection
       left_motor.setSpeed(0);
       right_motor.setSpeed(0);
       delay(150);
-      turn(90, diam, track); // turn left to face block
+      turn(90); // turn left to face block
       if (ultrasonicRead() > blockThreshold)
       {
-        lineFollow(reflectance1, reflectance2); // follow line until approach block to desired position
+        lineFollow(leftV, rightV); // follow line until approach block to desired position
       }
       robotState = DEPOSIT_OLD;
     }
     else
     {
-      lineFollow(reflectance1, reflectance2);
+      lineFollow(leftV, rightV);
     }
     break;
 
@@ -534,20 +553,20 @@ void updateRobotState()
     break;
 
   case BACK_TO_INTERSECTION:
-    turn(180, diam, track);
+    turn(180);
 
-    if ((reflectance1 > threshold) && (reflectance2 > threshold))
+    if ((leftV > threshold) && (rightV > threshold))
     { // reached intersection
       left_motor.setSpeed(0);
       right_motor.setSpeed(0);
       delay(150);
-      turn(-90, diam, track); // turn right to face roof
-      depositingNew = true;   // set this to true since we have picked up the new plate going to put back on roof
+      turn(-90);            // turn right to face roof
+      depositingNew = true; // set this to true since we have picked up the new plate going to put back on roof
       robotState = APPROACH_ROOF;
     }
     else
     {
-      lineFollow(reflectance1, reflectance2);
+      lineFollow(leftV, rightV);
     }
     break;
 
@@ -562,36 +581,75 @@ void updateRobotState()
     setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);
 
     // this should bring robot to the intersection facing the roof
-    turn(-90, diam, track); // turn right
-    straight(15, diam);     // go straight
-    turn(90, diam, track);  // turn left
+    turn(-90);    // turn right
+    straight(15); // go straight
+    turn(90);     // turn left
 
     // line follow until we find the line
-    while ((reflectance1 > threshold) && (reflectance2 > threshold))
+    while ((leftV < threshold) && (rightV < threshold))
     {
-      lineFollow(reflectance1, reflectance2);
+      lineFollow(leftV, rightV);
     }
 
-    turn(90, diam, track); // turn left
+    turn(90); // turn left
 
     // line follow until we hit intersection
-    while ((reflectance1 > threshold) && (reflectance2 > threshold))
+    while ((leftV < threshold) && (rightV < threshold))
     {
-      lineFollow(reflectance1, reflectance2);
+      lineFollow(leftV, rightV);
     }
 
-    turn(90, diam, track); // turn left to face 25 degree roof
+    turn(90); // turn left to face 25 degree roof
     break;
   }
 }
 
+// void printLineSensorValues(float reflectance1, float reflectance2)
+// {
+//   reflectance1 = leftLine.readVoltage();
+//   reflectance2 = rightLine.readVoltage();
+//   Serial.printf("linetracker: left: %f, right %f\n", reflectance1, reflectance2);
+//   //delay(500);
+// }
+
 void loop()
 {
-  //lineFollow();
-  grip.write(openGrip);
-  delay(100);
-  grip.write(closeGrip);
-  delay(100);
+  // LINE FOLLOW
+  // if (leftLine.readVoltage() > 0.6 && rightLine.readVoltage() > 0.6) // stop at intersection
+  // {
+  //   left_motor.setSpeed(0);
+  //   right_motor.setSpeed(0);
+  // }
+  // else
+  // {
+  //   followLine(leftV, rightV);
+  // }
+
+  // PRINT LINE SENSOR VALUES
+  //printValues(leftV, rightV);
+
+  // TURN
+  //turn(90);
+
+  // ULTRASONIC READ
+  // if (ultrasonicRead() > 11)
+  // {
+  //   left_motor.setSpeed(60);
+  //   right_motor.setSpeed(60);
+  // }
+  // else
+  // {
+  //   left_motor.setSpeed(0);
+  //   right_motor.setSpeed(0);
+  // }
+
+  // STRAIGHT
+  // straight(11);
+
+  // grip.write(openGrip);
+  // delay(100);
+  // grip.write(closeGrip);
+  // delay(100);
   // while(true){
   //  keyPress = decoder.getKeyCode();
   //  reflectance1 = analogRead(reflectancePin1);
