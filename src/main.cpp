@@ -120,8 +120,8 @@ void setup()
   grip.attach(servoPin);
   // printf("Attached %d", grip.attached());
 
-  //pinMode(reflectancePin1, INPUT);
-  //pinMode(reflectancePin2, INPUT);
+  pinMode(reflectancePin1, INPUT);
+  pinMode(reflectancePin2, INPUT);
 
   blueMotor.setup();
   blueMotor.reset();
@@ -228,9 +228,9 @@ used to see encoder count as blueMotor spins with positive effort
 // }
 
 //line follower which uses the values from the two reflectance pins as arguments void lineFollow(int reflectance_1, int reflectance_2)
-void lineFollow()
+void lineFollow(int reflectance_1, int reflectance_2)
 {
-  float error = reflectancePin1 - reflectancePin2;
+  float error = reflectance_1 - reflectance_2;
   float effort = 0;
   effort = kp * error;
   right_motor.setSpeed(defaultSpeed + effort);
