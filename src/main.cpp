@@ -67,7 +67,7 @@ double kp = 0.05;
 //for servo arm
 Servo grip;
 const int servoPin = 33;
-int openGrip = 180; // find number which make it close
+int openGrip = 100; // find number which make it close
 int closeGrip = 70; // find numbers which make it open
 
 //IR remote
@@ -115,28 +115,20 @@ void depositNew();
 void setup()
 {
   Serial.begin(115200);
-  Serial.println("hello");
-  LeftMotor left_motor;
-  left_motor.attach();
-  RightMotor right_motor;
-  right_motor.attach();
-
   ultrasonic.attach(SIDE_ULTRASONIC_TRIG, SIDE_ULTRASONIC_ECHO);
 
   grip.attach(servoPin);
   // printf("Attached %d", grip.attached());
 
-  pinMode(reflectancePin1, INPUT);
-  pinMode(reflectancePin2, INPUT);
+  //pinMode(reflectancePin1, INPUT);
+  //pinMode(reflectancePin2, INPUT);
 
   blueMotor.setup();
   blueMotor.reset();
 
   decoder.init();
 
-  //robotState = LINE_FOLLOW_OUT;
-
-  delay(500);
+  robotState = LINE_FOLLOW_OUT;
 }
 
 /*
@@ -595,16 +587,11 @@ void updateRobotState()
 
 void loop()
 {
-  Serial.println("here");
-  //printf("heloo");
-  // grip.write(180);
-  Serial.println("180");
-  //Serial.println(grip.read());
-  delay(1000);
-  grip.write(70);
-  Serial.println("10");
-  delay(1000);
-
+  //lineFollow();
+  grip.write(openGrip);
+  delay(100);
+  grip.write(closeGrip);
+  delay(100);
   // while(true){
   //  keyPress = decoder.getKeyCode();
   //  reflectance1 = analogRead(reflectancePin1);
