@@ -88,6 +88,7 @@ bool safeToDropOffNew = false;  // depositing new collector
 bool readyToPickUpNew = false;  // once new plate has been placed on block by person
 
 bool depositingNew = false; // false when we pick up old and deposit old, true when we have picked up new plate
+int previousState = 0;
 
 //state machines
 enum ROBOT_STATES
@@ -251,7 +252,7 @@ void lineFollow(float reflectance1, float reflectance2)
   right_motor.setSpeed(defaultSpeed + effort);
   left_motor.setSpeed(defaultSpeed - effort);
 
-  //Serial.printf("linetracker: left: %f, right %f\n", reflectance1, reflectance2);
+  Serial.printf("linetracker: left: %f, right %f\n", reflectance1, reflectance2);
   //delay(300);
 }
 
@@ -284,6 +285,7 @@ double ultrasonicRead()
   //if (distance > maxDistance) distance = maxDistance;
   //if(distance <= minDistance) distance = 120;
   //add something to take the average if the value is wildly inacurate
+  printf("ultrasonic: %f", distance);
   return distance;
 }
 
@@ -394,75 +396,45 @@ void pickUpOld()
 // depositing old plate on block
 void depositOld()
 {
-  if (ultrasonicRead() > blockThreshold)
-  { // check again to see if we are the position we want to be in
+  if (safeToBeDeposited)
+  {
+    // back away from block enough to get back into original postion to be ready to pick up new plate
 
-    // move arm down to staging block platform
-    PIDEffort = evaluate(blueMotor.getPosition(), stagingBlock);
-    setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);
-
-    // if button "2" is pressed on the remote
-    if (keyPress == remote2)
-    {
-      safeToBeDeposited = true;
-    }
-    if (safeToBeDeposited)
-    {
-      // open gripper
-      grip.write(openGrip);
-
-      delay(300);
-
-      // back away from block enough to get back into original postion to be ready to pick up new plate
-      straight(5); // have this go backwards
-
-      // close gripper
-      grip.write(closeGrip); // CHECK THIS
-    }
-    else
-    {
-      printf("Swanbot is waiting to safely deposit old plate\n");
-    }
+    // open gripper
+    grip.write(openGrip);
+    straight(-3);
+    left_motor.setSpeed(0);
+    right_motor.setSpeed(0);
+    blueMotor.setEffort(0);
+    // close gripper
+    //grip.write(closeGrip); // CHECK THIS
   }
   else
   {
-    printf("Swanbot is not in the correct position\n");
+    printf("Swanbot is waiting to safely deposit old plate\n");
   }
 }
 
 // picking up new plate from block
 void pickUpNew()
 {
-
-  // if button "3" is pressed on the remote
-  if (keyPress == remote3)
+  // raise gripper a little above block
+  while (blueMotor.getPosition() < blueMotor.getPosition() + 50)
   {
-    readyToPickUpNew = true;
+    //printf("reached here, lifting arm more\n");
+    PIDEffort = evaluate(blueMotor.getPosition(), blueMotor.getPosition() + 50);
+    setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);
   }
-
+  //straight(1);
   if (readyToPickUpNew)
   {
-
     // open gripper
-    grip.write(openGrip);
-
-    // if button "4" is pressed on the remote
-    if (keyPress == remote4)
+    grip.write(closeGrip);
+    while (blueMotor.getPosition() < Fourty5DegreeEncoderCount - 1000)
     {
-      safeToPickUpNew = true;
-    }
-
-    if (safeToPickUpNew)
-    {
-      // move a little closer to fully grip plate with gripper open
-      straight(5); // have to test to get distance forward
-
-      // close gripper
-      grip.write(closeGrip);
-    }
-    else
-    {
-      printf("Swanbot is waiting to safely pick up new plate\n");
+      //printf("reached here, lifting arm more\n");
+      PIDEffort = evaluate(blueMotor.getPosition(), Fourty5DegreeEncoderCount - 1000);
+      setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);
     }
   }
   else
@@ -470,6 +442,22 @@ void pickUpNew()
     printf("Plate is not ready to be picked up by Swanbot\n");
   }
 }
+
+// void actuallyPickUp()
+// {
+//   if (safeToPickUpNew)
+//   {
+//     // move a little closer to fully grip plate with gripper open
+//     straight(5); // have to test to get distance forward
+
+//     // close gripper
+//     grip.write(closeGrip);
+//   }
+//   else
+//   {
+//     printf("Swanbot is waiting to safely pick up new plate\n");
+//   }
+// }
 
 // depositing new plate on roof
 void depositNew()
@@ -510,9 +498,16 @@ void depositNew()
 // state case and switch function
 void updateRobotState()
 {
+  leftV = leftLine.readVoltage();
+  rightV = rightLine.readVoltage();
 
   switch (robotState)
   {
+    if (keyPress == remotePlayPause)
+    {
+      previousState = robotState;
+      robotState = IDLE;
+    }
   case LINE_FOLLOW_OUT:
     // driving with staging block height
     // PIDEffort = evaluate(blueMotor.getPosition(), stagingBlock);
@@ -547,9 +542,11 @@ void updateRobotState()
     else
     {
       printf("did not reach here\n");
-      PIDEffort = evaluate(blueMotor.getPosition(), Fourty5DegreeEncoderCount + 10); // if we are going to deposit plate, want arm to be a little higher than 45 degrees
-      setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);                     // move arm to a little higher than fortyFive roof height
-      delay(200);
+      left_motor.setSpeed(0);
+      right_motor.setSpeed(0);
+      // PIDEffort = evaluate(blueMotor.getPosition(), Fourty5DegreeEncoderCount + 10); // if we are going to deposit plate, want arm to be a little higher than 45 degrees
+      // setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);                     // move arm to a little higher than fortyFive roof height
+      // delay(200);
     }
 
     while (ultrasonicRead() > roofThreshold)
@@ -594,9 +591,9 @@ void updateRobotState()
     delay(200);
     pickUpOld();
     delay(300);
-    turn(180);
+    turn(175);
     robotState = TOWARD_BLOCK;
-    printf("reached toward block state\n");
+    //printf("reached toward block state\n");
     break;
 
   case IDLE:
@@ -609,7 +606,7 @@ void updateRobotState()
     {
       safeToBeCollected = true;
       robotState = PICKUP_OLD;
-      printf("going to pickup old now\n");
+      //printf("going to pickup old now\n");
     }
     else
     {
@@ -623,21 +620,36 @@ void updateRobotState()
       robotState = LINE_FOLLOW_OUT;
       printf("starting\n");
     }
+    if (keyPress == remote7)
+    {
+      safeToBeDeposited = true;
+      robotState = DEPOSIT_OLD;
+    }
+    if (keyPress == remote3)
+    {
+      printf("setting ready to pick up true\n");
+      readyToPickUpNew = true;
+      robotState = PICKUP_NEW;
+    }
+    if (keyPress == remotePlayPause)
+    {
+      robotState = previousState;
+    }
     break;
   case TOWARD_BLOCK:
     //straight (-5);
-    if ((leftV > 0.6) && (rightV > 0.6))
+    if ((leftV > 0.3) && (rightV > 0.3))
     { // reached intersection
       left_motor.setSpeed(0);
       right_motor.setSpeed(0);
       delay(150);
-      turn(90); // turn left to face block
-      if (ultrasonicRead() > blockThreshold)
-      {
-        lineFollow(leftV, rightV); // follow line until approach block to desired position
-      }
-      printf("hello");
-      //robotState = DEPOSIT_OLD;
+      straight(5);
+      turn(82); // turn left to face block
+      straight(20);
+      left_motor.setSpeed(0);
+      right_motor.setSpeed(0);
+      delay(1000);
+      robotState = DEPOSIT_OLD;
     }
     else
     {
@@ -645,31 +657,57 @@ void updateRobotState()
     }
     break;
 
-    // case DEPOSIT_OLD:
-    //   depositOld();
-    //   robotState = PICKUP_NEW;
-    //   break;
+  case DEPOSIT_OLD:
+
+    while (blueMotor.getPosition() > stagingBlock + 700)
+    {
+      printf("dropping off\n");
+      PIDEffort = evaluate(blueMotor.getPosition(), stagingBlock + 700);
+      setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);
+    }
+    blueMotor.setEffort(0);
+    robotState = IDLE;
+
+    depositOld();
+    left_motor.setSpeed(0);
+    right_motor.setSpeed(0);
+    blueMotor.setEffort(0);
+    robotState = PICKUP_NEW;
+
+    break;
 
     // case PICKUP_NEW:
+    //   if (!readyToPickUpNew)
+    //   {
+    //     blueMotor.setEffort(0);
+    //     printf("hello we are going to idle\n");
+    //     robotState = IDLE;
+    //   }
     //   pickUpNew();
+    //   delay(2000);
+    //   blueMotor.setEffort(0);
     //   robotState = BACK_TO_INTERSECTION;
     //   break;
 
     // case BACK_TO_INTERSECTION:
+    //   blueMotor.setEffort(0);
     //   turn(180);
 
-    //   if ((leftV > threshold) && (rightV > threshold))
+    //   if ((leftV > .6) && (rightV > .6))
     //   { // reached intersection
     //     left_motor.setSpeed(0);
     //     right_motor.setSpeed(0);
+    //     blueMotor.setEffort(0);
     //     delay(150);
     //     turn(-90);            // turn right to face roof
     //     depositingNew = true; // set this to true since we have picked up the new plate going to put back on roof
-    //     robotState = APPROACH_ROOF;
+    //     //robotState = APPROACH_ROOF;
+    //     //printf("got to approacj roof");
     //   }
     //   else
     //   {
     //     lineFollow(leftV, rightV);
+    //     blueMotor.setEffort(0);
     //   }
     //   break;
 
@@ -720,12 +758,14 @@ void loop()
   // LINE FOLLOW
   // if (leftLine.readVoltage() > 0.6 && rightLine.readVoltage() > 0.6) // stop at intersection
   // {
+
   //   left_motor.setSpeed(0);
   //   right_motor.setSpeed(0);
+  //   Serial.printf("linetracker: left: %f, right %f\n", leftLine.readVoltage(), rightLine.readVoltage());
   // }
   // else
   // {
-  //   followLine(leftV, rightV);
+  //   lineFollow(leftV, rightV);
   // }
 
   // PRINT LINE SENSOR VALUES
@@ -758,11 +798,13 @@ void loop()
   // raise arm to a certain height
   //PIDEffort = evaluate(blueMotor.getPosition(), Fourty5DegreeEncoderCount); // have to test to find this number
   //setScaledEffort = blueMotor.setEffortWithoutDB(PIDEffort);
-  //bringArmDown();
+  bringArmDown();
 
   //ACTUAL PROGRAM
   // while (true)
   // {
+  //   leftV = leftLine.readVoltage();
+  //   rightV = rightLine.readVoltage();
   //   keyPress = decoder.getKeyCode();
   //   updateRobotState();
   // }
